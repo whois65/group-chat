@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Group Chat</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #080C14; --surface: #0D1524; --panel: #111D2E;
+            --border: #1A2A40; --accent: #3B7BF6; --accent2: #00E5C8;
+            --text: #E2EAF4; --muted: #506070; --danger: #F6453B;
+            --radius: 12px; --mono: 'DM Mono', monospace; --display: 'Syne', sans-serif;
+        }
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: var(--bg); color: var(--text); font-family: var(--mono);
+               height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+        body::before { content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 999;
+            background: repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.05) 2px,rgba(0,0,0,.05) 4px); }
+
+        header { display:flex; align-items:center; justify-content:space-between;
+                 padding:14px 20px; background:var(--surface); border-bottom:1px solid var(--border); flex-shrink:0; }
+        .logo-dot { width:8px; height:8px; border-radius:50%; background:var(--accent2);
+                    box-shadow:0 0 8px var(--accent2); animation:pulse 2s ease-in-out infinite; }
+        @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.85)} }
+        .logo-text { font-family:var(--display); font-size:17px; font-weight:700; margin-left:10px; flex:1; }
+        #statusBadge { font-size:10px; padding:3px 10px; border-radius:20px; border:1px solid var(--border); color:var(--muted); transition:all .3s; }
+        #statusBadge.online  { border-color:var(--accent2); color:var(--accent2); }
+        #statusBadge.error   { border-color:var(--danger);  color:var(--danger); }
+
+        #usernameBar { display:flex; align-items:center; gap:10px; padding:8px 20px;
+                       background:var(--panel); border-bottom:1px solid var(--border); flex-shrink:0; }
+        #usernameBar label { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; white-space:nowrap; }
+        #usernameInput { flex:1; max-width:200px; background:var(--border); border:1px solid transparent;
+                         color:var(--text); font-family:var(--mono); font-size:12px; padding:5px 10px;
+                         border-radius:8px; outline:none; transition:border-color .2s; }
+        #usernameInput:focus { border-color:var(--accent); }
+        #msgCount { margin-left:auto; font-size:10px; color:var(--muted); }
+
+        #chatArea { flex:1; overflow-y:auto; padding:14px 18px; display:flex; flex-direction:column; gap:8px; scroll-behavior:smooth; }
+        #chatArea::-webkit-scrollbar { width:3px; }
+        #chatArea::-webkit-scrollbar-thumb { background:var(--border); border-radius:4px; }
+
+        .message { display:grid; grid-template-columns:32px 1fr; gap:6px 10px;
+                   padding:10px 12px; background:var(--surface); border:1px solid var(--border);
+                   border-radius:var(--radius); animation:slideIn .16s ease; }
+        .message.own { background:#0E1E3A; border-color:#1B3260; }
+        @keyframes slideIn { from{opacity:0;transform:translateY(5px)} to{opacity:1;transform:translateY(0)} }
+        .avatar { width:32px; height:32px; border-radius:7px; display:flex; align-items:center; justify-content:center;
+                  font-size:12px; font-weight:700; font-family:var(--display); grid-row:span 2; align-self:start; }
+        .msg-header { display:flex; align-items:baseline; gap:8px; }
+        .username { font-family:var(--display); font-size:12px; font-weight:600; }
+        .time { font-size:10px; color:var(--muted); }
+        .msg-body { font-size:12px; line-height:1.6; color:#C8D8E8; word-break:break-word; }
+
+        /* media */
+        .msg-image { max-width:100%; max-height:280px; border-radius:8px; cursor:zoom-in; display:block; margin-top:4px; object-fit:cover; }
+        .msg-video, .msg-audio { width:100%; margin-top:4px; border-radius:8px; }
+        .msg-audio { height:36px; }
+        .file-card { display:flex; align-items:center; gap:10px; margin-top:4px; padding:8px 12px;
+                     background:var(--panel); border:1px solid var(--border); border-radius:8px; text-decoration:none; color:var(--text); }
+        .file-icon { font-size:20px; }
+        .file-info { display:flex; flex-direction:column; gap:1px; }
+        .file-name { font-size:11px; font-weight:500; }
+        .file-size { font-size:10px; color:var(--muted); }
+
+        /* link preview */
+        .link-preview { display:flex; gap:10px; margin-top:6px; padding:10px; background:var(--panel);
+                        border:1px solid var(--border); border-radius:8px; text-decoration:none; color:var(--text); }
+        .link-preview img { width:64px; height:64px; border-radius:6px; object-fit:cover; flex-shrink:0; }
+        .link-meta { display:flex; flex-direction:column; gap:3px; overflow:hidden; }
+        .link-title { font-size:11px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .link-desc  { font-size:10px; color:var(--muted); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+        .link-site  { font-size:10px; color:var(--accent); }
+
+        #emptyState { flex:1; display:flex; flex-direction:column; align-items:center;
+                      justify-content:center; gap:6px; color:var(--muted); font-size:12px; }
+        #emptyState .ei { font-size:28px; opacity:.3; }
+
+        /* input area */
+        #inputArea { padding:10px 16px; background:var(--surface); border-top:1px solid var(--border);
+                     display:flex; flex-direction:column; gap:8px; flex-shrink:0; }
+        #attachPreview { display:none; align-items:center; gap:8px; padding:6px 10px;
+                         background:var(--panel); border-radius:8px; font-size:11px; color:var(--muted); }
+        #attachPreview.show { display:flex; }
+        #attachName { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        #attachRemove { cursor:pointer; color:var(--danger); font-size:14px; padding:2px; }
+        #uploadProgress { height:2px; background:var(--border); border-radius:2px; display:none; }
+        #uploadProgress.show { display:block; }
+        #uploadProgressBar { height:2px; background:var(--accent); border-radius:2px; width:0; transition:width .2s; }
+        .input-row { display:flex; gap:8px; align-items:center; }
+        #attachBtn { width:36px; height:36px; flex-shrink:0; background:var(--panel); border:1px solid var(--border);
+                     border-radius:9px; color:var(--muted); cursor:pointer; display:flex; align-items:center;
+                     justify-content:center; font-size:16px; transition:color .2s,border-color .2s; }
+        #attachBtn:hover { color:var(--text); border-color:var(--accent); }
+        #fileInput { display:none; }
+        #messageInput { flex:1; background:var(--panel); border:1px solid var(--border); color:var(--text);
+                        font-family:var(--mono); font-size:13px; padding:9px 12px; border-radius:9px;
+                        outline:none; transition:border-color .2s; resize:none; height:36px; max-height:100px; }
+        #messageInput:focus { border-color:var(--accent); }
+        #sendBtn { width:36px; height:36px; flex-shrink:0; background:var(--accent); border:none;
+                   border-radius:9px; color:#fff; cursor:pointer; display:flex; align-items:center;
+                   justify-content:center; transition:background .2s,transform .1s; }
+        #sendBtn:hover  { background:#2D6AE6; }
+        #sendBtn:active { transform:scale(.95); }
+        #sendBtn:disabled { background:var(--border); cursor:not-allowed; }
+        #sendBtn svg { width:16px; height:16px; }
+
+        #toast { position:fixed; bottom:70px; left:50%; transform:translateX(-50%) translateY(10px);
+                 background:#1A2A40; border:1px solid var(--border); color:var(--text); font-size:11px;
+                 padding:6px 14px; border-radius:20px; opacity:0; transition:opacity .2s,transform .2s;
+                 pointer-events:none; z-index:100; }
+        #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+
+        /* lightbox */
+        #lightbox { display:none; position:fixed; inset:0; background:rgba(0,0,0,.9); z-index:200;
+                    align-items:center; justify-content:center; }
+        #lightbox.show { display:flex; }
+        #lightbox img { max-width:95vw; max-height:95vh; border-radius:8px; }
+        #lightboxClose { position:absolute; top:16px; right:20px; color:#fff; font-size:28px; cursor:pointer; }
+    </style>
+</head>
+<body>
+
+<header>
+    <div style="display:flex;align-items:center">
+        <div class="logo-dot"></div>
+        <span class="logo-text">Group Chat</span>
+    </div>
+    <span id="statusBadge">connecting...</span>
+</header>
+
+<div id="usernameBar">
+    <label for="usernameInput">you are</label>
+    <input id="usernameInput" type="text" placeholder="enter username" maxlength="32" autocomplete="off" spellcheck="false">
+    <span id="msgCount"></span>
+</div>
+
+<div id="chatArea">
+    <div id="emptyState">
+        <div class="ei">◌</div>
+        <span>no messages yet</span>
+    </div>
+</div>
+
+<div id="inputArea">
+    <div id="attachPreview">
+        <span>📎</span>
+        <span id="attachName"></span>
+        <span id="attachRemove" title="Remove">✕</span>
+    </div>
+    <div id="uploadProgress"><div id="uploadProgressBar"></div></div>
+    <div class="input-row">
+        <button id="attachBtn" title="Attach file">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66L9.41 17.41a2 2 0 01-2.83-2.83l8.49-8.48"/>
+            </svg>
+        </button>
+        <input type="file" id="fileInput" accept="image/*,video/mp4,video/webm,audio/*,application/pdf,.zip,.txt">
+        <textarea id="messageInput" placeholder="type message..." maxlength="1000" rows="1"></textarea>
+        <button id="sendBtn" title="Send (Enter)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"/>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+            </svg>
+        </button>
+    </div>
+</div>
+
+<div id="toast"></div>
+<div id="lightbox">
+    <span id="lightboxClose">✕</span>
+    <img id="lightboxImg" src="" alt="">
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const chatArea      = $("chatArea");
+const emptyState    = $("emptyState");
+const messageInput  = $("messageInput");
+const sendBtn       = $("sendBtn");
+const statusBadge   = $("statusBadge");
+const usernameInput = $("usernameInput");
+const msgCount      = $("msgCount");
+const toast         = $("toast");
+const fileInput     = $("fileInput");
+const attachBtn     = $("attachBtn");
+const attachPreview = $("attachPreview");
+const attachName    = $("attachName");
+const attachRemove  = $("attachRemove");
+const progressWrap  = $("uploadProgress");
+const progressBar   = $("uploadProgressBar");
+const lightbox      = $("lightbox");
+const lightboxImg   = $("lightboxImg");
+
+let lastId      = 0;
+let allMessages = [];
+let sending     = false;
+let pendingFile = null;
+let toastTimer  = null;
+const previewCache = {};
+
+const AVATAR_COLORS = [
+    ["#1A2F5C","#3B7BF6"],["#1A3A2F","#00C9A0"],
+    ["#3A1A2A","#F6458B"],["#2A2A1A","#E5C000"],
+    ["#2A1A3A","#9B6BF6"],["#1A3A3A","#00C4E5"],
+];
+
+usernameInput.value = localStorage.getItem("chat_username") || "";
+usernameInput.addEventListener("change", () => localStorage.setItem("chat_username", usernameInput.value.trim()));
+
+/* ── helpers ── */
+function avatarStyle(u) {
+    let h = 0;
+    for (const c of u) h = (h * 31 + c.charCodeAt(0)) & 0xFFFF;
+    const [bg, fg] = AVATAR_COLORS[h % AVATAR_COLORS.length];
+    return { bg, fg, initial: u.charAt(0).toUpperCase() || "?" };
+}
+function fmtTime(iso) { return new Date(iso).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" }); }
+function fmtSize(b) {
+    if (b < 1024)       return b + " B";
+    if (b < 1048576)    return (b/1024).toFixed(1) + " KB";
+    return (b/1048576).toFixed(1) + " MB";
+}
+function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove("show"), 3000);
+}
+function isAtBottom() { return chatArea.scrollHeight - chatArea.clientHeight - chatArea.scrollTop < 80; }
+
+/* ── URL detection ── */
+const URL_RE = /https?:\/\/[^\s"<>]+/gi;
+function extractFirstUrl(text) { return text.match(URL_RE)?.[0] || null; }
+
+/* ── render ── */
+async function renderMessages(newMsgs) {
+    if (!newMsgs.length && !allMessages.length) { emptyState.style.display = "flex"; return; }
+    emptyState.style.display = "none";
+
+    const myUsername = usernameInput.value.trim();
+    const atBottom   = isAtBottom();
+
+    for (const msg of newMsgs) {
+        allMessages.push(msg);
+        const av    = avatarStyle(msg.username);
+        const isOwn = msg.username === myUsername;
+
+        const div = document.createElement("div");
+        div.className = `message${isOwn ? " own" : ""}`;
+        div.dataset.id = msg.id;
+
+        const bodyHtml = buildBodyHtml(msg);
+        div.innerHTML = `
+            <div class="avatar" style="background:${av.bg};color:${av.fg}">${av.initial}</div>
+            <div class="msg-header">
+                <span class="username" style="color:${av.fg}">${msg.username}</span>
+                <span class="time">${fmtTime(msg.time)}</span>
+            </div>
+            <div class="msg-body">${bodyHtml}</div>
+        `;
+        chatArea.appendChild(div);
+
+        /* async: inject link preview if this is a text msg with a URL */
+        if (msg.type === "text") {
+            const url = extractFirstUrl(msg.message);
+            if (url) injectLinkPreview(div.querySelector(".msg-body"), url);
+        }
+    }
+
+    msgCount.textContent = `${allMessages.length} msg${allMessages.length !== 1 ? "s" : ""}`;
+    if (atBottom || newMsgs.some(m => m.username === usernameInput.value.trim())) {
+        chatArea.scrollTop = chatArea.scrollHeight;
+    }
+}
+
+function buildBodyHtml(msg) {
+    if (msg.type === "image") {
+        return `
+            ${msg.message ? `<div style="margin-bottom:4px">${msg.message}</div>` : ""}
+            <img class="msg-image" src="${msg.file.url}" alt="${msg.file.originalName}" loading="lazy">
+        `;
+    }
+    if (msg.type === "video") {
+        return `
+            ${msg.message ? `<div style="margin-bottom:4px">${msg.message}</div>` : ""}
+            <video class="msg-video" controls preload="metadata">
+                <source src="${msg.file.url}" type="${msg.file.mime}">
+            </video>
+        `;
+    }
+    if (msg.type === "audio") {
+        return `
+            ${msg.message ? `<div style="margin-bottom:4px">${msg.message}</div>` : ""}
+            <audio class="msg-audio" controls preload="metadata">
+                <source src="${msg.file.url}" type="${msg.file.mime}">
+            </audio>
+        `;
+    }
+    if (msg.type === "file") {
+        const icon = msg.file.mime === "application/pdf" ? "📄" : msg.file.mime.startsWith("text") ? "📝" : "📦";
+        return `
+            ${msg.message ? `<div style="margin-bottom:4px">${msg.message}</div>` : ""}
+            <a class="file-card" href="${msg.file.url}" download="${msg.file.originalName}" target="_blank">
+                <span class="file-icon">${icon}</span>
+                <div class="file-info">
+                    <span class="file-name">${msg.file.originalName}</span>
+                    <span class="file-size">${fmtSize(msg.file.size)}</span>
+                </div>
+            </a>
+        `;
+    }
+    /* text */
+    return msg.message;
+}
+
+async function injectLinkPreview(bodyEl, url) {
+    if (previewCache[url] === false) return;
+    try {
+        const data = previewCache[url] || await (await fetch(`/preview?url=${encodeURIComponent(url)}`)).json();
+        if (!data.success) { previewCache[url] = false; return; }
+        previewCache[url] = data;
+        const p = data.data;
+        const imgTag = p.image ? `<img src="${p.image}" alt="" onerror="this.style.display='none'">` : "";
+        const desc   = p.description ? `<span class="link-desc">${p.description}</span>` : "";
+        const el = document.createElement("a");
+        el.className = "link-preview";
+        el.href      = p.url;
+        el.target    = "_blank";
+        el.rel       = "noopener";
+        el.innerHTML = `${imgTag}<div class="link-meta"><span class="link-title">${p.title}</span>${desc}<span class="link-site">${p.siteName}</span></div>`;
+        bodyEl.appendChild(el);
+    } catch { previewCache[url] = false; }
+}
+
+/* ── poll ── */
+async function poll() {
+    try {
+        const url = lastId ? `/msg?since=${lastId}` : "/msg";
+        const res = await fetch(url);
+        if (!res.ok) throw new Error();
+        const json = await res.json();
+        if (json.data.length) {
+            lastId = json.data[json.data.length - 1].id;
+            renderMessages(json.data);
+        }
+        statusBadge.textContent = "online";
+        statusBadge.className = "online";
+    } catch {
+        statusBadge.textContent = "disconnected";
+        statusBadge.className = "error";
+    }
+}
+
+/* ── file attach ── */
+attachBtn.addEventListener("click", () => fileInput.click());
+fileInput.addEventListener("change", () => {
+    const f = fileInput.files[0];
+    if (!f) return;
+    if (f.size > 50 * 1024 * 1024) { showToast("File too large (max 50 MB)"); fileInput.value = ""; return; }
+    pendingFile = f;
+    attachName.textContent = f.name;
+    attachPreview.classList.add("show");
+});
+attachRemove.addEventListener("click", () => {
+    pendingFile = null;
+    fileInput.value = "";
+    attachPreview.classList.remove("show");
+});
+
+/* ── send ── */
+async function send() {
+    const message  = messageInput.value.trim();
+    const username = usernameInput.value.trim() || "Anonymous";
+    if ((!message && !pendingFile) || sending) return;
+
+    sending = true;
+    sendBtn.disabled = true;
+    messageInput.value = "";
+    autoResize();
+
+    try {
+        let json;
+        if (pendingFile) {
+            /* file upload */
+            const fd = new FormData();
+            fd.append("file", pendingFile);
+            fd.append("username", username);
+            if (message) fd.append("message", message);
+
+            progressWrap.classList.add("show");
+            progressBar.style.width = "0%";
+
+            json = await new Promise((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                xhr.open("POST", "/upload");
+                xhr.upload.onprogress = e => {
+                    if (e.lengthComputable) progressBar.style.width = (e.loaded/e.total*100) + "%";
+                };
+                xhr.onload = () => resolve(JSON.parse(xhr.responseText));
+                xhr.onerror = reject;
+                xhr.send(fd);
+            });
+
+            progressWrap.classList.remove("show");
+            pendingFile = null;
+            fileInput.value = "";
+            attachPreview.classList.remove("show");
+        } else {
+            /* text message */
+            const res = await fetch("/send", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ username, message }),
+            });
+            json = await res.json();
+        }
+
+        if (!json.success) { showToast(json.error || "Failed"); return; }
+        lastId = json.data.id;
+        renderMessages([json.data]);
+    } catch {
+        showToast("Network error — try again");
+    } finally {
+        sending = false;
+        sendBtn.disabled = false;
+        messageInput.focus();
+    }
+}
+
+/* ── textarea auto-resize ── */
+function autoResize() {
+    messageInput.style.height = "36px";
+    messageInput.style.height = Math.min(messageInput.scrollHeight, 100) + "px";
+}
+messageInput.addEventListener("input", autoResize);
+messageInput.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } });
+sendBtn.addEventListener("click", send);
+
+/* ── lightbox ── */
+chatArea.addEventListener("click", e => {
+    const img = e.target.closest(".msg-image");
+    if (!img) return;
+    lightboxImg.src = img.src;
+    lightbox.classList.add("show");
+});
+$("lightboxClose").addEventListener("click", () => lightbox.classList.remove("show"));
+lightbox.addEventListener("click", e => { if (e.target === lightbox) lightbox.classList.remove("show"); });
+
+/* ── boot ── */
+poll();
+setInterval(poll, 3000);
+</script>
+</body>
+</html>
